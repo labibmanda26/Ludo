@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ludo</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f3ead8;--ink:#2a2118;--card:#fffaf0;--line:#d8c9aa}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1c1a24;--ink:#f1ead9;--card:#2a2735;--line:#4a4559}}
+:root[data-theme="dark"]{--bg:#1c1a24;--ink:#f1ead9;--card:#2a2735;--line:#4a4559}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Trebuchet MS",Verdana,sans-serif}
+#game{display:none;flex-direction:column;align-items:center;gap:12px;padding:14px 10px 24px}
+#game.on{display:flex}
+button,.chip{font:inherit;color:var(--ink);background:var(--card);border:2px solid var(--line);border-radius:12px;padding:8px 12px;cursor:pointer}
+button:focus-visible{outline:3px solid #3b6fd4;outline-offset:2px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+#status{display:flex;align-items:center;gap:8px;font-weight:bold;min-height:28px;text-align:center}
+#dot{width:16px;height:16px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px var(--line)}
+canvas{border-radius:14px;box-shadow:0 6px 24px rgba(0,0,0,.25);touch-action:manipulation;max-width:100%}
+#dice{width:92px;height:92px;font-size:64px;line-height:1;padding:0;border-radius:18px;display:flex;align-items:center;justify-content:center;border-width:3px}
+#dice:disabled{opacity:.55;cursor:default}
+#dice.roll{animation:shake .12s infinite}
+@keyframes shake{50%{transform:rotate(12deg) scale(1.06)}}
+.row{display:flex;gap:16px;align-items:center}
+.score{font-size:13px;opacity:.9}
+#menu,#win{position:fixed;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:calc(20px + env(safe-area-inset-top,0px)) 20px calc(20px + env(safe-area-inset-bottom,0px));background:linear-gradient(135deg,#d94a3d 0 25%,#3f9e4f 25% 50%,#f0b92b 50% 75%,#3b6fd4 75%);overflow:auto}
+#menu[hidden],#win[hidden]{display:none}
+.panel{background:rgba(255,250,240,.96);color:#2a2118;border-radius:24px;padding:22px;width:min(380px,100%);display:flex;flex-direction:column;gap:10px;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+.logo{font:bold 64px Georgia,serif;letter-spacing:4px;text-align:center;text-shadow:0 3px 0 rgba(0,0,0,.25);color:#fff}
+.panel h2{margin:0 0 4px;font-size:18px;text-align:center}
+.big{font-size:18px;font-weight:bold;padding:14px;color:#fff;border:0;border-bottom:4px solid rgba(0,0,0,.25);text-align:center}
+.opts{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;font-size:13px}
+.chip{padding:6px 10px;color:#2a2118;background:#fff}
+.chip.sel{background:#2a2118;color:#fff;border-color:#2a2118}
+.hint{font-size:12px;opacity:.75;text-align:center;margin:0}
+.c{position:fixed;top:-20px;width:8px;height:14px;animation:fall 2.6s linear infinite;pointer-events:none}
+@keyframes fall{to{transform:translateY(115vh) rotate(720deg)}}
+@media (prefers-reduced-motion:reduce){#dice.roll,.c{animation:none}}
+</style></head>
+<body>
+<div id="menu"><div class="logo"><span style="color:#d94a3d">L</span><span style="color:#3f9e4f">U</span><span style="color:#f0b92b">D</span><span style="color:#3b6fd4">O</span></div><div class="panel" id="mbody"></div></div>
+<div id="win" hidden><div class="panel"><div class="logo" id="wt" style="font-size:44px;color:#2a2118;text-shadow:none"></div><button class="big" style="background:#3f9e4f" id="again">Play again</button><button class="big" style="background:#3b6fd4" id="tomenu">Main menu</button></div></div>
+<div id="game">
+  <div class="bar"><button id="back">☰ Menu</button><button id="snd">🔊 Sound on</button></div>
+  <div id="status"><span id="dot"></span><span id="msg"></span></div>
+  <canvas id="cv" tabindex="0" aria-label="Ludo board"></canvas>
+  <div class="row"><button id="dice" aria-label="Roll the dice">⚀</button><div class="score" id="score"></div></div>
+</div>
+<script>
+const COLORS=['#d94a3d','#3f9e4f','#f0b92b','#3b6fd4'],LIGHT=['#f6b9b2','#b3e0ba','#fbe3a0','#b6cdf5'],NAMES=['Red','Green','Yellow','Blue'];
+const PATH=[[1,6],[2,6],[3,6],[4,6],[5,6],[6,5],[6,4],[6,3],[6,2],[6,1],[6,0],[7,0],[8,0],[8,1],[8,2],[8,3],[8,4],[8,5],[9,6],[10,6],[11,6],[12,6],[13,6],[14,6],[14,7],[14,8],[13,8],[12,8],[11,8],[10,8],[9,8],[8,9],[8,10],[8,11],[8,12],[8,13],[8,14],[7,14],[6,14],[6,13],[6,12],[6,11],[6,10],[6,9],[5,8],[4,8],[3,8],[2,8],[1,8],[0,8],[0,7],[0,6]];
+const START=[0,13,26,39],SAFE=[0,8,13,21,26,34,39,47];
+const HOME=[[1,2,3,4,5].map(x=>[x,7]),[1,2,3,4,5].map(y=>[7,y]),[13,12,11,10,9].map(x=>[x,7]),[13,12,11,10,9].map(y=>[7,y])];
+const YARD=[[0,0],[9,0],[9,9],[0,9]],SPOT=[[1.5,1.5],[3.5,1.5],[1.5,3.5],[3.5,3.5]],CEN=[[6.8,7.5],[7.5,6.8],[8.2,7.5],[7.5,8.2]];
+const SEATS={2:[0,2],3:[0,1,2],4:[0,1,2,3]};
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d'),diceEl=document.getElementById('dice'),$=id=>document.getElementById(id);
+const opt={quick:false,hard:true,sound:true};
+let S,cur,d,phase='idle',movable=[],human=[],active=[0,1,2,3],over=false,size=300,sixes=0,goal=4,last={n:2,h:1};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+/* sound */
+let AC;function beep(f,dur=.08,type='square'){if(!opt.sound)return;try{AC=AC||new AudioContext();const o=AC.createOscillator(),g=AC.createGain();o.type=type;o.frequency.value=f;g.gain.value=.05;g.gain.exponentialRampToValueAtTime(.001,AC.currentTime+dur);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+dur)}catch(e){}}
+
+/* menu */
+function chip(label,on,fn){const b=document.createElement('button');b.className='chip'+(on?' sel':'');b.textContent=label;b.onclick=fn;return b}
+function big(label,color,fn){const b=document.createElement('button');b.className='big';b.style.background=color;b.textContent=label;b.onclick=fn;return b}
+function menu(screen){
+  $('menu').hidden=false;$('game').classList.remove('on');phase='idle';const m=$('mbody');m.innerHTML='';
+  const h=t=>{const e=document.createElement('h2');e.textContent=t;m.append(e)};
+  if(screen==='cpu'){h('Play with Computer');
+    m.append(big('1 vs 1 Bot','#d94a3d',()=>start(2,1)),big('1 vs 2 Bots','#3f9e4f',()=>start(3,1)),big('1 vs 3 Bots','#3b6fd4',()=>start(4,1)),big('Back','#6b6256',()=>menu()))}
+  else if(screen==='local'){h('Play with Friends (one device)');
+    m.append(big('1 vs 1','#d94a3d',()=>start(2,2)),big('1 vs 1 vs 1 (3 players)','#3f9e4f',()=>start(3,3)),big('4 Players','#f0b92b',()=>start(4,4)),big('2 Players + 2 Bots','#3b6fd4',()=>start(4,2)),big('Back','#6b6256',()=>menu()))}
+  else if(screen==='rules'){h('Rules & specials');const p=document.createElement('p');p.className='hint';p.style.fontSize='14px';p.style.opacity=1;
+    p.innerHTML='Roll a 6 to leave the yard. A 6, a capture or reaching home gives another roll.<br><br>Three 6s in a row lose your turn.<br>★ and coloured start squares are safe.<br>Tokens need an exact roll to finish.<br><br><b>Specials:</b> Quick mode, smart bots, animated moves, sounds and a win celebration.';m.append(p,big('Back','#6b6256',()=>menu()))}
+  else{h('Choose game');
+    m.append(big('🤖  Play with Computer','#d94a3d',()=>menu('cpu')),big('👥  Play with Friends','#3f9e4f',()=>menu('local')),big('📖  Rules & specials','#3b6fd4',()=>menu('rules')));
+    const mk=(items)=>{const r=document.createElement('div');r.className='opts';items.forEach(i=>r.append(i));m.append(r)};
+    const rd=()=>menu();
+    mk([chip('Classic (4 tokens home)',!opt.quick,()=>{opt.quick=false;rd()}),chip('Quick (1 token home)',opt.quick,()=>{opt.quick=true;rd()})]);
+    mk([chip('Easy bots',!opt.hard,()=>{opt.hard=false;rd()}),chip('Smart bots',opt.hard,()=>{opt.hard=true;rd()}),chip(opt.sound?'🔊 Sound on':'🔇 Sound off',opt.sound,()=>{opt.sound=!opt.sound;rd()})])}
+}
+function start(n,h){
+  last={n,h};active=SEATS[n];human=[0,0,0,0];active.forEach((s,i)=>human[s]=i<h?1:0);
+  S=[0,1,2,3].map(()=>[-1,-1,-1,-1]);cur=0;d=0;over=false;movable=[];sixes=0;goal=opt.quick?1:4;
+  $('menu').hidden=true;$('win').hidden=true;$('game').classList.add('on');diceEl.textContent='⚀';resize();startTurn();
+}
+function who(p){const hc=active.filter(s=>human[s]).length;return human[p]?(hc===1?'You':NAMES[p]):NAMES[p]+' (Bot)'}
+function setMsg(t){$('msg').textContent=t;$('dot').style.background=COLORS[cur]}
+function updScore(){$('score').innerHTML=active.map(p=>NAMES[p]+': '+S[p].filter(s=>s===56).length+'/'+goal).join('<br>')}
+function startTurn(){
+  phase='roll';movable=[];updScore();const mine=human[cur];
+  setMsg(mine?(who(cur)==='You'?'Your turn: roll the dice':NAMES[cur]+', roll the dice'):who(cur)+' is rolling…');
+  diceEl.disabled=!mine;if(!mine)setTimeout(roll,800);
+}
+function legal(p,t,r){const s=S[p][t];return s===-1?r===6:s+r<=56}
+function roll(){
+  if(phase!=='roll'||over)return;phase='rolling';diceEl.disabled=true;diceEl.classList.add('roll');
+  let n=0;const faces='⚀⚁⚂⚃⚄⚅';
+  const iv=setInterval(()=>{diceEl.textContent=faces[Math.floor(Math.random()*6)];beep(200+Math.random()*200,.03);
+    if(++n>8){clearInterval(iv);diceEl.classList.remove('roll');d=1+Math.floor(Math.random()*6);diceEl.textContent=faces[d-1];afterRoll()}},70);
+}
+function afterRoll(){
+  if(d===6){if(++sixes===3){sixes=0;setMsg(who(cur)+': three 6s in a row, turn lost!');beep(120,.4,'sawtooth');setTimeout(()=>next(false),1200);return}}else sixes=0;
+  movable=[0,1,2,3].filter(t=>legal(cur,t,d));
+  if(!movable.length){setMsg(who(cur)+' rolled '+d+': no moves');setTimeout(()=>next(false),900);return}
+  if(movable.length===1){setMsg(who(cur)+' rolled '+d);phase='wait';setTimeout(()=>move(movable[0]),600);return}
+  if(human[cur]){phase='pick';setMsg(who(cur)+' rolled '+d+': tap a glowing token')}
+  else{setMsg(who(cur)+' rolled '+d);phase='wait';setTimeout(()=>move(opt.hard?ai():movable[Math.floor(Math.random()*movable.length)]),800)}
+}
+function cellIdx(p,s){return s>=0&&s<=50?(START[p]+s)%52:-1}
+function ai(){
+  let best=movable[0],bs=-1e9;
+  for(const t of movable){
+    const s=S[cur][t],ns=s===-1?0:s+d,ci=cellIdx(cur,ns);let sc=ns;
+    if(ns===56)sc+=100;if(s===-1)sc+=30;
+    if(ci>=0){if(SAFE.includes(ci))sc+=15;
+      for(const q of active)if(q!==cur)for(const x of S[q])if(cellIdx(q,x)===ci&&!SAFE.includes(ci))sc+=60;
+      for(const q of active)if(q!==cur)for(const x of S[q]){const dist=((ci-cellIdx(q,x))+52)%52;if(x>=0&&x<=50&&dist>0&&dist<=6&&!SAFE.includes(ci))sc-=12}}
+    if(s>=0&&SAFE.includes(cellIdx(cur,s)))sc-=5;
+    sc+=Math.random()*3;if(sc>bs){bs=sc;best=t}
+  }
+  return best;
+}
+async function move(t){
+  if(over||!movable.includes(t))return;movable=[];phase='anim';
+  const s=S[cur][t],ns=s===-1?0:s+d;let extra=d===6;
+  if(s===-1){S[cur][t]=0;beep(520,.1)}else for(let k=s+1;k<=ns;k++){S[cur][t]=k;beep(300+k*5,.05);await sleep(120)}
+  const ci=cellIdx(cur,ns);
+  if(ci>=0&&!SAFE.includes(ci))for(const q of active)if(q!==cur)for(let i=0;i<4;i++)if(cellIdx(q,S[q][i])===ci){S[q][i]=-1;extra=true;beep(150,.3,'sawtooth')}
+  if(ns===56){extra=true;beep(880,.25,'triangle')}
+  updScore();
+  if(S[cur].filter(x=>x===56).length>=goal){over=true;diceEl.disabled=true;setMsg(NAMES[cur]+' wins!');await sleep(500);win();return}
+  await sleep(300);next(extra);
+}
+function next(extra){
+  if(over)return;
+  if(!extra){sixes=0;do cur=(cur+1)%4;while(!active.includes(cur))}
+  startTurn();
+}
+function win(){
+  [523,659,784,1047].forEach((f,i)=>setTimeout(()=>beep(f,.25,'triangle'),i*150));
+  $('wt').textContent=NAMES[cur]+' wins! 🎉';$('wt').style.color=COLORS[cur];$('win').hidden=false;
+  document.querySelectorAll('.c').forEach(e=>e.remove());
+  for(let i=0;i<70;i++){const e=document.createElement('i');e.className='c';e.style.cssText='left:'+Math.random()*100+'vw;background:'+COLORS[i%4]+';animation-delay:'+Math.random()*2.5+'s;z-index:6';document.body.append(e)}
+}
+function tokenPos(p,i){const s=S[p][i];
+  if(s===-1)return[YARD[p][0]+SPOT[i][0],YARD[p][1]+SPOT[i][1]];
+  if(s<=50){const c=PATH[(START[p]+s)%52];return[c[0]+.5,c[1]+.5]}
+  if(s<56){const c=HOME[p][s-51];return[c[0]+.5,c[1]+.5]}
+  return CEN[p];
+}
+function draw(){
+  if(!S)return;const c=size/15;ctx.clearRect(0,0,size,size);ctx.save();ctx.scale(c,c);
+  ctx.fillStyle='#fffdf6';ctx.fillRect(0,0,15,15);
+  for(let p=0;p<4;p++){
+    const[ox,oy]=YARD[p],on=active.includes(p);ctx.fillStyle=on?COLORS[p]:'#c9c2b4';ctx.fillRect(ox,oy,6,6);
+    ctx.fillStyle='#fffdf6';ctx.beginPath();ctx.roundRect(ox+.9,oy+.9,4.2,4.2,.5);ctx.fill();
+    if(on)SPOT.forEach(s=>{ctx.fillStyle=LIGHT[p];ctx.beginPath();ctx.arc(ox+s[0],oy+s[1],.5,0,7);ctx.fill()});
+  }
+  ctx.lineWidth=.04;ctx.strokeStyle='#8a7c63';
+  PATH.forEach(([x,y],i)=>{
+    let col='#fffdf6';START.forEach((st,p)=>{if(i===st)col=active.includes(p)?COLORS[p]:'#c9c2b4'});
+    ctx.fillStyle=col;ctx.fillRect(x,y,1,1);ctx.strokeRect(x,y,1,1);
+    if(SAFE.includes(i)&&!START.includes(i)){ctx.fillStyle='#8a7c63';ctx.font='.8px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('★',x+.5,y+.55)}
+  });
+  HOME.forEach((h,p)=>h.forEach(([x,y])=>{ctx.fillStyle=active.includes(p)?COLORS[p]:'#c9c2b4';ctx.fillRect(x,y,1,1);ctx.strokeRect(x,y,1,1)}));
+  [[[6,6],[6,9],0],[[6,6],[9,6],1],[[9,6],[9,9],2],[[6,9],[9,9],3]].forEach(([a,b,p])=>{ctx.fillStyle=active.includes(p)?COLORS[p]:'#c9c2b4';ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.lineTo(7.5,7.5);ctx.fill()});
+  const groups={};
+  for(const p of active)for(let i=0;i<4;i++){const[x,y]=tokenPos(p,i),k=S[p][i]===-1||S[p][i]===56?'u'+p+i:x+','+y;(groups[k]=groups[k]||[]).push([p,i,x,y])}
+  const pulse=(Math.sin(Date.now()/180)+1)/2;
+  Object.values(groups).forEach(g=>g.forEach(([p,i,x,y],j)=>{
+    const n=g.length,r=n>1?.3:.38;if(n>1){x+=(j-(n-1)/2)*.28;y+=(j%2?.12:-.12)}
+    ctx.fillStyle='rgba(0,0,0,.28)';ctx.beginPath();ctx.arc(x+.04,y+.07,r,0,7);ctx.fill();
+    ctx.fillStyle=COLORS[p];ctx.strokeStyle='#fff';ctx.lineWidth=.1;ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.fill();ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,.55)';ctx.beginPath();ctx.arc(x-r*.25,y-r*.25,r*.35,0,7);ctx.fill();
+    if(p===cur&&phase==='pick'&&movable.includes(i)){ctx.strokeStyle='#111';ctx.lineWidth=.1;ctx.setLineDash([.15,.12]);ctx.beginPath();ctx.arc(x,y,r+.12+pulse*.1,0,7);ctx.stroke();ctx.setLineDash([])}
+  }));
+  ctx.restore();
+}
+function resize(){size=Math.max(200,Math.min(window.innerWidth-20,560));const dpr=window.devicePixelRatio||1;cv.width=size*dpr;cv.height=size*dpr;cv.style.width=size+'px';cv.style.height=size+'px';ctx.setTransform(dpr,0,0,dpr,0,0)}
+cv.addEventListener('click',e=>{
+  if(phase!=='pick'||!human[cur])return;
+  const r=cv.getBoundingClientRect(),x=(e.clientX-r.left)/r.width*15,y=(e.clientY-r.top)/r.height*15;let best=null,bd=.8;
+  for(const t of movable){const[tx,ty]=tokenPos(cur,t),dd=Math.hypot(tx-x,ty-y);if(dd<bd){bd=dd;best=t}}
+  if(best!==null)move(best);
+});
+diceEl.onclick=()=>{if(human[cur])roll()};
+$('back').onclick=()=>menu();
+$('snd').onclick=()=>{opt.sound=!opt.sound;$('snd').textContent=opt.sound?'🔊 Sound on':'🔇 Sound off'};
+$('again').onclick=()=>start(last.n,last.h);
+$('tomenu').onclick=()=>{$('win').hidden=true;document.querySelectorAll('.c').forEach(e=>e.remove());menu()};
+window.addEventListener('resize',resize);
+(function loop(){draw();requestAnimationFrame(loop)})();
+resize();menu();
+</script>
+</body></html>
